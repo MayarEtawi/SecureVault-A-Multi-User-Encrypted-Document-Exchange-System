@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.key
+*.pem
+private_keys/
+user_data/
+server_storage/
+.pytest_cache/
+.idea/
+.vscode/
