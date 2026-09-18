@@ -12,7 +12,7 @@ def HMAC_SHA256(key, message):
 
     # If the key is longer than 64 bytes,hash it to produce a 32-byte key
     if len(key) > block_size:
-        key = pad_message(key)
+        key = hash_data(key)
 
     # If the key is shorter than 64 bytes,pad it with zeros
     if len(key) < block_size:
@@ -41,21 +41,14 @@ def hmac_verify(key, message, received_tag):
     if(expected_tag == received_tag):
         return True
     else: return False
-#test case 
-key = "my-secret-key"
-message = "mayar"
+if __name__ == "__main__":
+    key = "my-secret-key"
+    message = "mayar"
 
-received_tag = bytes.fromhex(
-    "36636012fdb78cbc11a0a009f9475ef108d2ee88c233932ae310150d3b59a87d")
+    tag = HMAC_SHA256(key, message)
 
-print("Original message:", hmac_verify(key, message, received_tag))
-
-tampered_message = "mayar1"
-
-print("Modified message:", hmac_verify(key, tampered_message, received_tag))
-
-# Test
-
-tag = HMAC_SHA256("my-secret-key", "mayar")
+    print("Original message:", hmac_verify(key, message, tag))
+    print("Modified message:", hmac_verify(key, "mayar1", tag))
+    print("HMAC-SHA256: 0x" + tag.hex())
 
 print("HMAC-SHA256:0x", tag.hex())
