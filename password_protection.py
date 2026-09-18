@@ -45,26 +45,21 @@ def verify_password(password:str, record: dict):
     else:
         return False
 
-#password = input("Enter password: ")#all time return string 
-
-#record = hash_password(password)
-
-#print("Salt:", record["salt"].hex())
-#print("Password hash:", record["password_hash"].hex())
-# Create a credential record during registration
 #test case
-original_password = "Mayar123"
-record = hash_password(original_password)
 
-print("Stored salt:", record["salt"].hex())
-print("Stored hash:", record["password_hash"].hex())
+if __name__ == "__main__":
+    original_password = "Mayar123"
+    record = hash_password(original_password)
 
+    print("Stored salt:", record["salt"].hex())
+    print("Stored hash:", record["password_hash"].hex())
 
-# Test 1: Correct password
-result1 = verify_password("Mayar123", record)
-print("Correct password result:", result1)
+    print(
+        "Correct password result:",
+        verify_password("Mayar123", record)
+    )
 
-
-# Test 2: Wrong password
-result2 = verify_password("Mayar123", record)
-print("Wrong password result:", result2)
+    print(
+        "Wrong password result:",
+        verify_password("WrongPassword", record)
+    )
