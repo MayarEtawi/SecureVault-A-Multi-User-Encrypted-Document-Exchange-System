@@ -4,14 +4,20 @@ from password_protection import hash_password
 users = {}
 
 
-def register_user(username: str, password: str) -> bool:
-    # Remove spaces from the beginning and end
-    username = username.strip()
+def register_user(username: str, password: str) :
+   
+    if not isinstance(username, str):
+        raise TypeError("username must be a string")
 
+    if not isinstance(password, str):
+        raise TypeError("password must be a string")
+     # Remove spaces from the beginning and end
+    username = username.strip()
     # Reject empty username or password
     if username == "" or password == "":
         return False
-
+    if len(password) < 8:
+        return False
     # Reject duplicate usernames
     if username in users:
         return False
@@ -36,25 +42,3 @@ def register_user(username: str, password: str) -> bool:
     return True
 
 
-# Registration test
-username = input("Create username: ")
-password = input("Create password: ")
-
-if register_user(username, password):
-    print("Registration successful")
-
-    record = users[username]
-
-    print("\nStored credential record:")
-    print("Username:", record["username"])
-    print(
-        "Salt:",
-        record["password_protection"]["salt"].hex()
-    )
-    print(
-        "Password hash:",
-        record["password_protection"]["password_hash"].hex()
-    )
-
-else:
-    print("Registration failed")
