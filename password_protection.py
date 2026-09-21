@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from argon2.low_level import hash_secret_raw, Type
 
@@ -39,12 +40,13 @@ def verify_password(password:str, record: dict):
     calculated_hash = hash_secret_raw( secret=password_bytes,salt=record["salt"],time_cost=record["time_cost"],memory_cost=record["memory_cost"],
         parallelism=record["parallelism"],hash_len=record["hash_length"],type=Type.ID)
     # Compare the calculated hash with the stored hash
-    if( calculated_hash == record["password_hash"]):
-        return True
+    return secrets.compare_digest(
+    calculated_hash,
+    record["password_hash"]
+)
+        
     
-    else:
-        return False
-
+   
 #test case
 
 if __name__ == "__main__":
