@@ -263,9 +263,9 @@ AI assistance was used for the wording and structure of this README, as permitte
 
 | Name | Student ID | GitHub |
 |---|---|---|
-| `TODO` | `TODO` | `TODO` |
-| `TODO` | `TODO` | `TODO` |
-| `TODO` | `TODO` | `TODO` |
+| `Mayar Etawi` | `1230501` | `TODO` |
+| `Dalay Ghazal` | ` 1232090` | `TODO` |
+| `Aya Jararaa` | `1230069` | `TODO` |
 
 **Deliverables:** [Design report](TODO) · [Presentation slides](TODO)
 
