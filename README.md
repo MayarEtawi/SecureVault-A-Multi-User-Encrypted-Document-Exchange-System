@@ -126,7 +126,7 @@ The course requires at least 70% of the cryptographic algorithms to be written b
 | AES-128-GCM | `TODO: team / library` | The current reference component uses PyCryptodome |
 | SHA-256 / HMAC-SHA-256 / HKDF | `TODO` | |
 | P-256 ECC, ECDH, ECDSA | `TODO` | |
-| Argon2id | `TODO` | |
+| Argon2id | `team / library` |The current reference component uses PyCryptodome |
 | CA and certificates | `TODO` | |
 
 Big-integer arithmetic, OS randomness, networking and storage come from libraries and do not count against the fraction.
