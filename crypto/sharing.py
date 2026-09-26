@@ -34,14 +34,16 @@ from crypto.ecdsa import sign as ecdsa_sign, verify as ecdsa_verify
 from crypto.gcm import AuthenticationError
 from pki.certificate import UserCertificate
 from pki.ca import verify_certificate, DEFAULT_CA_NAME
-from key_wrap import (
+
+# Corrected package imports to match project structure
+from crypto.key_wrap import (
     DOCUMENT_KEY_SIZE,
     WrappedDocumentKey,
     encode_public_key,
     wrap_document_key,
     unwrap_document_key,
 )
-from freshness import VersionTracker, ReplayError
+from crypto.freshness import VersionTracker, ReplayError
 
 SCALAR_LEN = 32  # P-256 order n fits in 32 bytes
 
@@ -139,7 +141,7 @@ class ShareRecord:
         return self.signable_bytes() + _encode_int(r, SCALAR_LEN) + _encode_int(s, SCALAR_LEN)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "ShareRecord":
+    def from_bytes(cls, data: bytes) -> ShareRecord:
         offset = 0
         version, offset = _decode_int(data, offset, 8)
         document_id, offset = _decode_str(data, offset)
