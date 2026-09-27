@@ -187,5 +187,72 @@ git clone <YOUR-REPO-URL>
 cd <YOUR-REPO-FOLDER>/SecureVault
 
 # 2. Install dependencies
+You do **not** need to add this entire text as a new section, because almost all of these details are already documented in your `README.md`!
+
+However, adding a few small refinements based on this text will ensure your `README.md` covers everything required for your project grading and live demonstration.
+
+---
+
+### What is Already Covered in Your README
+
+* **Separate CA Setup:** Already covered in **Security Notes** (keeping `ca.key` outside the repo/server directory) and **Getting Started** (`setup_ca.py`).
+
+
+* **Registration Flow:** Already covered in **How It Works** (Step 3: Certificates) and **Getting Started** (`approve_ca.py`).
+
+
+* **Sharing Flow:** Already covered in **How It Works** (Steps 5 & 6).
+
+
+* **Limitations & Warning:** Already covered in **Limitations** (in-memory server storage and `pickle` serialization risks).
+
+
+
+---
+
+### Recommended Updates to Make Your README Complete
+
+If you want your README to reflect the exact CLI commands mentioned in your snippet, you can update two specific sections in your README:
+
+#### 1. Update the "Getting Started" Section
+
+Your snippet mentions running modules directly (`python -m pki.admin_cli`). Update the **Set up the CA** subsection under `## 🚀 Getting Started` to include both ways to run it:
+
+```markdown
+### Set up the CA (once, before the first registration)
+
+```bash
+# Option A: Using the setup script
+python setup_ca.py
+
+# Option B: Direct module initialization
+python -m pki.admin_cli init ../ca.key client/trusted_ca_public.json
+
+```
+
+This writes the CA's private key outside the project folder (`../ca.key`) and exports the public key to `client/trusted_ca_public.json` so clients can trust it.
+
+```
+
+#### 2. Update the "Demo Scenarios" Section
+Your snippet asks to specify the exact menu steps for the live demonstration. Update the `TODO` under `## 🎬 Demo Scenarios` to give clear instructions for the presentation:
+
+```markdown
+### Live Demo Step-by-Step Sequence
+
+1. **CA Initialization:** CA operator initializes keypair (`setup_ca.py`) and copies `trusted_ca_public.json` to the client.
+2. **User Registration:** 
+   - Alice runs `python main.py` $\rightarrow$ Selects **Register**.
+   - Client generates keypairs, writes a request file, and pauses.
+   - CA Operator verifies fingerprints out-of-band and runs `python approve_ca.py` (or `python -m pki.admin_cli issue ...`), typing `APPROVE`.
+   - Alice's registration finishes. (Repeat for Bob).
+3. **Upload & Share:**
+   - Alice logs in $\rightarrow$ Uploads a document $\rightarrow$ Selects **Share** $\rightarrow$ Chooses recipient `Bob`.
+4. **Receive & Verify:**
+   - Bob logs in $\rightarrow$ Selects **Receive Shared Document** $\rightarrow$ Client re-verifies CA certificates, sender ECDSA signature, and GCM tag before decrypting.
+5. **Tamper Testing:**
+   - Flip a byte in the server's ciphertext or modify metadata $\rightarrow$ Verify the client raises `DocumentVerificationError` and rejects the file.
+
+```
 # (no requirements.txt is committed yet — install these packages directly)
 python -m pip install pycryptodome argon2-cffi pytest
