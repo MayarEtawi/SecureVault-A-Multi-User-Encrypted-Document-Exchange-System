@@ -68,7 +68,7 @@ def request_certificate_offline(
     username: str,
     ecdh_public_key: Point,
     ecdsa_public_key: Point,
-    ecdsa_private_key: int,  # جديد
+    ecdsa_private_key: int,  
 ) -> UserCertificate:
     """Submit a request for separate CA approval on this demo machine."""
     requests_directory = Path.home() / "SecureVault-Requests"
