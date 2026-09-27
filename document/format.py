@@ -1,7 +1,7 @@
 """Length-prefixed binary format for AES-GCM protected documents."""
 
 
-MAGIC = b"SGCM"
+MAGIC = b"SGC2"
 
 NONCE_SIZE = 12
 TAG_SIZE = 16
