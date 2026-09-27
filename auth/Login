@@ -1,0 +1,71 @@
+from auth.password_protection import verify_password,hash_password
+from auth.private_key_protection import recover_private_key
+from crypto.gcm import AuthenticationError
+from client.socket_client import send_request
+
+# Dummy record used when the username does not exist it makes the unknown-username case perform an Argon2id operation too.
+DUMMY_PASSWORD_RECORD = hash_password("dummy-password-for-login")
+def login_user(username: str, password: str) :
+    """
+    Verify a registered user's username and password.
+    """
+    if not isinstance(username, str):
+        raise TypeError("username must be a string")
+    if not isinstance(password, str):
+        raise TypeError("password must be a string")
+    # Remove spaces from the beginning and end
+    username = username.strip()
+    # Get the stored credential record
+    response = send_request(
+    {
+        "type": "GET_USER",
+        "username": username})
+    
+    if response["status"] is False:
+        verify_password(password, DUMMY_PASSWORD_RECORD)
+        return False
+    credential_record = response["credential_record"]
+    # Reject an unknown username
+    if credential_record is None:
+     verify_password(password, DUMMY_PASSWORD_RECORD)
+     return False
+        
+    # Get the stored Argon2id information
+    password_record = credential_record["password_protection"]
+    # Verify the entered password
+    return verify_password(password, password_record)
+def login_and_unlock(username: str, password: str):
+    username = username.strip()
+
+    response = send_request(
+        {
+            "type": "GET_USER",
+            "username": username
+        }
+    )
+    if response["status"] is False:
+        verify_password(password, DUMMY_PASSWORD_RECORD)
+        return None
+
+    credential_record = response["credential_record"]
+
+    if not verify_password( password, credential_record["password_protection"] ):
+        return None
+
+
+    protected_keys = credential_record[ "protected_private_keys"]
+
+    try:
+        ecdh_private_key = recover_private_key(password=password,protected=protected_keys["ecdh"])
+
+        ecdsa_private_key = recover_private_key( password=password, protected=protected_keys["ecdsa"] )
+
+    except AuthenticationError:
+        return None
+    return {
+        "username": username,
+        "ecdh_private_key": ecdh_private_key,
+        "ecdsa_private_key": ecdsa_private_key,
+        "public_keys": credential_record["public_keys"],
+        "certificate": credential_record["certificate"]
+    }
