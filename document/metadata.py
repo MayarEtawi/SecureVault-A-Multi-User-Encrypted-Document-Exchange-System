@@ -1,11 +1,23 @@
 """Encode and decode public and private document metadata."""
-#allows us to convert numbers into bytes 
-#I->Unsigned 4-byte integer Q->Unsigned 8-byte integer H->Unsigned 2-byte integer
-#> = big-endian byte order
+
+"""
+Module summary:
+- pack_string(): Convert string into 2-byte length then bytes.
+- read_string(): Read string from byte array using the length prefix.
+- check_integer(): Check if number is integer inside correct min/max limits.
+- encode_public(): Turn public dict metadata into bytes for AES-GCM AAD.
+- decode_public(): Read public metadata bytes back to dict and check validity.
+- encode_private(): Pack secret file type and data before doing encryption.
+- decode_private(): Read secret file type and data after decryption finished.
+"""
+
+# Import struct for change numbers into bytes format
+# I = 4 bytes number, Q = 8 bytes number, H = 2 bytes number
+# > means big-endian order
 import struct
 
-# These fields remain visible to the server.
-# AES-GCM authenticates them as AAD, so they cannot be modified.
+# Public fields list. Server can read this data.
+# AES-GCM check this as AAD so nobody can edit it.
 PUBLIC_FIELDS = {
     "document_id",
     "owner_id",
@@ -15,8 +27,7 @@ PUBLIC_FIELDS = {
     "timestamp",
 }
 
-# A string length is stored in two bytes.
-# Two bytes can represent values from 0 to 65535.
+# Max string length size in two bytes
 MAX_STRING_SIZE = 65535
 STRING_LENGTH_SIZE = 2
 
@@ -24,79 +35,63 @@ STRING_LENGTH_SIZE = 2
 # ============================================================
 # String encoding and decoding
 # ============================================================
-#convert a string into bytes
+
 def pack_string(value: str, field_name: str) -> bytes:
     """
-    Convert a string into:
-
-        [2-byte length][UTF-8 string bytes]
-
+    Convert string to bytes like this:
+    [2-byte size][UTF-8 string bytes]
+    
     Example:
-        "pdf" becomes:
-
-        00 03 70 64 66
-        ----- --------
-        length  "pdf"
+    "pdf" becomes:
+    00 03 70 64 66
     """
-
-    # The input must be a Python string.
+    # Value must be python string
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a string")
-
-    # Reject empty strings and strings containing only spaces.
+    
+    # Do not accept empty string or string with only space
     if value.strip() == "":
         raise ValueError(f"{field_name} must not be empty")
-
-  
-    # This is safe. It allows English, Arabic and other
-    # Unicode characters to be stored into bytes
+    
+    # Change string to utf-8 bytes. Works for English and Arabic text
     encoded_value = value.encode("utf-8")
-
-    # The length must fit inside two bytes.
+    
+    # Check string size not bigger than max size
     if len(encoded_value) > MAX_STRING_SIZE:
         raise ValueError(f"{field_name} is too long")
-
-    #stores the length of the string in two bytes, followed by the UTF-8 encoded string itself.
+    
+    # Pack length in 2 bytes and attach encoded text
     encoded_length = struct.pack(">H", len(encoded_value))
     return encoded_length + encoded_value
 
-#reverse the pack_string()
+
 def read_string(data: bytes, position: int) -> tuple[str, int]:
     """
-    Read one string stored as:
-
-        [2-byte length][UTF-8 string bytes]
-
-    Returns:
-        decoded string
-        position immediately after the string
+    Read length-prefixed string from data.
+    Return decoded string and next index position.
     """
-
-    # We need two bytes to read the string length.
+    # Need 2 bytes minimum to read length
     if position + STRING_LENGTH_SIZE > len(data):
         raise ValueError("Invalid encoded string")
-
-    # Read the unsigned two-byte length.
-    string_length = struct.unpack_from(">H",data,position,)[0]#since it might return a tuple (3,) ->[0]->3
-
-    # Move past the two length bytes.
+    
+    # Read length number from 2 bytes
+    string_length = struct.unpack_from(">H", data, position)[0]
     position += STRING_LENGTH_SIZE
-
-    # Calculate where the string should end.
+    
+    # Calculate end index for string
     string_end = position + string_length
-
-    # Reject the data if it claims to contain more bytes
-    # than are actually available.
+    
+    # Stop if string length goes outside data size
     if string_end > len(data):
         raise ValueError("Invalid encoded string")
-
+    
     string_bytes = data[position:string_end]
-
+    
     try:
         decoded_string = string_bytes.decode("utf-8")
     except UnicodeDecodeError:
         raise ValueError("Invalid UTF-8 string") from None
-
+        
     return decoded_string, string_end
 
 
@@ -104,12 +99,12 @@ def read_string(data: bytes, position: int) -> tuple[str, int]:
 # Integer validation
 # ============================================================
 
-def check_integer(value,field_name: str,minimum: int,maximum: int,) -> None:
-    """Check that a metadata value is an integer in the allowed range."""
-    # In Python, bool is a subclass of int.
-    # Therefore, True and False must be rejected explicitly.
+def check_integer(value, field_name: str, minimum: int, maximum: int) -> None:
+    """Check number is correct integer and in valid range."""
+    # Boolean is child class of int in python so reject True/False
     if not isinstance(value, int) or isinstance(value, bool):
         raise TypeError(f"{field_name} must be an integer")
+        
     if value < minimum or value > maximum:
         raise ValueError(f"{field_name} is out of range")
 
@@ -120,95 +115,71 @@ def check_integer(value,field_name: str,minimum: int,maximum: int,) -> None:
 
 def encode_public(metadata: dict) -> bytes:
     """
-    Encode public metadata.
-
-    This data remains readable by the server, but it is
-    authenticated as AES-GCM AAD.
-
-    Format:
-
-        [document ID]
-        [owner ID]
-        [4-byte version]
-        [filename]
-        [8-byte file size]
-        [timestamp]
+    Encode public dictionary fields into byte sequence.
+    Used as AAD header for GCM mode.
     """
-
+    # Check input is dictionary
     if not isinstance(metadata, dict):
         raise TypeError("Metadata must be a dictionary")
-
-    # Require exactly the expected public fields.
-    # This prevents private fields such as filename from
-    # accidentally being stored publicly.
+        
+    # Check dict keys exactly equal public fields set
     if set(metadata.keys()) != PUBLIC_FIELDS:
-        raise ValueError(
-            "Missing or unexpected public metadata fields"
-        )
-
-    # Version is stored using four bytes.
-    check_integer(metadata["version"],"version",1,2**32 - 1,)
-
-    # File size is stored using eight bytes.
-    check_integer(metadata["file_size"],"file_size",0,2**64 - 1,)
-
-    document_id_bytes = pack_string(metadata["document_id"],"document_id",)
-
-    owner_id_bytes = pack_string(metadata["owner_id"],"owner_id",)
-
-    # >I means an unsigned 4-byte integer.
-    version_bytes = struct.pack(">I",metadata["version"],)
-
+        raise ValueError("Missing or unexpected public metadata fields")
+        
+    # Validate version (4 bytes limit) and file size (8 bytes limit)
+    check_integer(metadata["version"], "version", 1, 2**32 - 1)
+    check_integer(metadata["file_size"], "file_size", 0, 2**64 - 1)
+    
+    # Pack all text and integer fields
+    document_id_bytes = pack_string(metadata["document_id"], "document_id")
+    owner_id_bytes = pack_string(metadata["owner_id"], "owner_id")
+    version_bytes = struct.pack(">I", metadata["version"])
     filename_bytes = pack_string(metadata["filename"], "filename")
-
-    # >Q means an unsigned 8-byte integer.
-    file_size_bytes = struct.pack(">Q",metadata["file_size"],)
-
-    timestamp_bytes = pack_string(metadata["timestamp"],"timestamp",)
-
-    return (document_id_bytes+ owner_id_bytes+ version_bytes+ filename_bytes+ file_size_bytes+ timestamp_bytes)
+    file_size_bytes = struct.pack(">Q", metadata["file_size"])
+    timestamp_bytes = pack_string(metadata["timestamp"], "timestamp")
+    
+    return (
+        document_id_bytes
+        + owner_id_bytes
+        + version_bytes
+        + filename_bytes
+        + file_size_bytes
+        + timestamp_bytes
+    )
 
 
 def decode_public(data: bytes) -> dict:
-    """Decode public metadata bytes back into a dictionary."""
-
+    """Read public metadata bytes and construct dictionary again."""
     if not isinstance(data, bytes):
         raise TypeError("Public metadata must be bytes")
-
+        
     position = 0
-
-    # Read the first two length-prefixed strings.
-    document_id, position = read_string(data,position,)
-
-    owner_id, position = read_string(data,position,)
-
-    # Version needs four bytes and file size needs eight.
-    #
-    # Total required:
-    #     4 + 8 = 12 bytes
+    
+    # Read string fields and advance pointer position
+    document_id, position = read_string(data, position)
+    owner_id, position = read_string(data, position)
+    
+    # Must have 12 bytes minimum left for version (4) + file_size (8)
     if position + 12 > len(data):
         raise ValueError("Public metadata is incomplete")
-
-    version = struct.unpack_from(">I",data,position,)[0]
-
+        
+    version = struct.unpack_from(">I", data, position)[0]
     position += 4
-
+    
     filename, position = read_string(data, position)
-
-    # The eight-byte file size must still fit after the filename.
+    
     if position + 8 > len(data):
         raise ValueError("Public metadata is incomplete")
-
-    file_size = struct.unpack_from(">Q",data,position,)[0]
-
+        
+    file_size = struct.unpack_from(">Q", data, position)[0]
     position += 8
-
-    timestamp, position = read_string(data,position,)
-
-    # No unexplained bytes should remain.
+    
+    timestamp, position = read_string(data, position)
+    
+    # Check no remaining extra bytes at the end
     if position != len(data):
         raise ValueError("Public metadata contains extra data")
-
+        
     metadata = {
         "document_id": document_id,
         "owner_id": owner_id,
@@ -217,14 +188,11 @@ def decode_public(data: bytes) -> dict:
         "file_size": file_size,
         "timestamp": timestamp,
     }
-
-    # Validate the decoded values.
-    #
-    # It also confirms that the input uses our one accepted
-    # encoding format.
+    
+    # Re-encode to verify format matches canonical byte output
     if encode_public(metadata) != data:
         raise ValueError("Invalid public metadata")
-
+        
     return metadata
 
 
@@ -232,48 +200,33 @@ def decode_public(data: bytes) -> dict:
 # Private metadata and document contents
 # ============================================================
 
-def encode_private(file_type: str,content: bytes,) -> bytes:
+def encode_private(file_type: str, content: bytes) -> bytes:
     """
-    Build the private payload encrypted by AES-GCM.
-
-    Format:
-
-        [file type]
-        [document contents]
-
-    The document content does not need a length because it
-    occupies all remaining bytes.
+    Pack private payload before encrypting with AES-GCM.
+    Format: [file_type string][raw content bytes]
     """
-
     if not isinstance(content, bytes):
         raise TypeError("Document content must be bytes")
-
-    file_type_bytes = pack_string(file_type,"file_type",)
-
+        
+    file_type_bytes = pack_string(file_type, "file_type")
     return file_type_bytes + content
 
 
-def decode_private(payload: bytes,) -> tuple[str, bytes]:
+def decode_private(payload: bytes) -> tuple[str, bytes]:
     """
-    Decode the private payload after AES-GCM verification.
-
-    Important:
-        Do not call this function before the GCM tag has
-        been verified successfully.
+    Unpack decrypted payload back into file type string and raw content.
+    Note: Call this only after tag verification success.
     """
-
     if not isinstance(payload, bytes):
         raise TypeError("Private payload must be bytes")
-
+        
     position = 0
-
-    file_type, position = read_string(payload,position,)
-
-    # Defensive validation of decrypted private metadata.
+    file_type, position = read_string(payload, position)
+    
+    # Double check file type isn't blank
     if file_type.strip() == "":
         raise ValueError("File type must not be empty")
-
-    # Everything remaining belongs to the document.
+        
+    # All leftover bytes belong to file content
     content = payload[position:]
-
     return file_type, content
