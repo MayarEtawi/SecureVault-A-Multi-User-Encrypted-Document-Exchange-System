@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# ==============================================================================
+# IMPORTS & DEPENDENCIES
+# ==============================================================================
+
 from dataclasses import replace
 import secrets
 import time
@@ -21,15 +25,28 @@ from pki.certificate import (
     validate_certificate_fields,
 )
 
+# ==============================================================================
+# PROTOCOL CONSTANTS
+# ==============================================================================
 
 DEFAULT_CA_NAME = "SecureVault Root CA"
-DEFAULT_VALIDITY_SECONDS = 365 * 24 * 60 * 60
+DEFAULT_VALIDITY_SECONDS = 365 * 24 * 60 * 60  # 1 year validity duration
 
+# ==============================================================================
+# KEY GENERATION
+# ==============================================================================
 
 def generate_ca_keypair() -> tuple[int, Point]:
-    """Generate the CA's ECDSA signing key pair."""
+    """
+    Generate the CA's ECDSA signing key pair.
+
+    Returns a tuple of (private_key_int, public_key_point).
+    """
     return generate_ecdsa_keypair()
 
+# ==============================================================================
+# CERTIFICATE ISSUANCE
+# ==============================================================================
 
 def issue_certificate(
     ca_private_key: int,
@@ -47,12 +64,15 @@ def issue_certificate(
     The caller must first authenticate and authorize the username and keys.
     Keep this function and the CA private key outside the document server.
     """
+    
+    # 1. Validate CA Private Key
     if not isinstance(ca_private_key, int) or isinstance(ca_private_key, bool):
         raise TypeError("CA private key must be an integer")
 
     if not (1 <= ca_private_key < n):
         raise ValueError("invalid CA private key")
 
+    # 2. Validate Validity Time Range Parameters
     if valid_from is None:
         valid_from = int(time.time())
 
@@ -67,6 +87,7 @@ def issue_certificate(
     if validity_seconds <= 0:
         raise ValueError("validity period must be positive")
 
+    # 3. Construct Unsigned User Certificate Data Container
     unsigned_certificate = UserCertificate(
         version=CERTIFICATE_VERSION,
         serial_number=secrets.token_bytes(SERIAL_NUMBER_SIZE),
@@ -79,10 +100,11 @@ def issue_certificate(
         ca_signature=None,
     )
 
-    # This validates all fields, including timestamp range, before signing.
+    # 4. Canonicalize Body and Generate CA ECDSA Signature
     certificate_body = encode_certificate_body(unsigned_certificate)
     signature = sign(certificate_body, ca_private_key)
 
+    # 5. Attach Signature to Certificate and Re-verify Structural Validity
     signed_certificate = replace(
         unsigned_certificate,
         ca_signature=signature,
@@ -91,6 +113,9 @@ def issue_certificate(
 
     return signed_certificate
 
+# ==============================================================================
+# CERTIFICATE VERIFICATION
+# ==============================================================================
 
 def verify_certificate(
     certificate: UserCertificate,
@@ -102,17 +127,20 @@ def verify_certificate(
 ) -> bool:
     """Check the certificate fields, identity, lifetime, and CA signature."""
     try:
+        # 1. Validate Core Input Types & Public Key Validity
         if not isinstance(certificate, UserCertificate):
             return False
 
         if not is_valid_public_key(trusted_ca_public_key):
             return False
 
+        # 2. Structural Field Validation
         validate_certificate_fields(certificate)
 
         if certificate.ca_signature is None:
             return False
 
+        # 3. Identity and Issuer Matching
         if certificate.issuer != expected_issuer:
             return False
 
@@ -122,6 +150,7 @@ def verify_certificate(
         ):
             return False
 
+        # 4. Expiration and Lifetime Range Validation
         if current_time is None:
             current_time = int(time.time())
 
@@ -133,6 +162,7 @@ def verify_certificate(
         ):
             return False
 
+        # 5. Cryptographic Signature Verification
         certificate_body = encode_certificate_body(certificate)
 
         return verify(
@@ -142,4 +172,5 @@ def verify_certificate(
         )
 
     except (TypeError, ValueError, OverflowError, UnicodeError):
+        # Catch unexpected structural or conversion errors as invalid verification
         return False
