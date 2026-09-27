@@ -2,7 +2,7 @@ import socket
 import pickle
 
 HOST = "127.0.0.1"
-PORT = 5000
+PORT = 5001
 
 
 def receive_exactly(connection, size):
