@@ -1,0 +1,85 @@
+from crypto.ecdh import generate_keypair as generate_ecdh_keypair
+from crypto.ecdsa import generate_keypair as generate_ecdsa_keypair
+from client.socket_client import send_request
+from auth.private_key_protection import protect_private_key
+from auth.certificate_enrollment import (enroll_certificate,
+    CertificateEnrollmentError)
+from auth.password_protection import hash_password
+# storage for registered users
+
+
+
+def register_user( username: str, password: str, request_certificate, trusted_ca_public_key):
+
+    if not isinstance(username, str):
+        raise TypeError("username must be a string")
+
+    if not isinstance(password, str):
+        raise TypeError("password must be a string")
+
+    # Remove spaces from the beginning and end
+    username = username.strip()
+
+    # Reject empty username or password
+    if username == "" or password == "":
+        return False
+
+    # Require at least 15 characters,following NIST
+    if len(password) < 15:
+        return False
+
+    
+
+    # Protect the login password using Argon2id
+    password_record = hash_password(password)
+    # Generate a separate ECDH key pair
+    ecdh_private_key, ecdh_public_key = (generate_ecdh_keypair())
+    # Generate a separate ECDSA key pair
+    ecdsa_private_key, ecdsa_public_key = (generate_ecdsa_keypair())
+    #  Protect the ECDH private key using AES-GCM
+    protected_ecdh_private_key = protect_private_key( password=password,private_key=ecdh_private_key,key_type="ECDH")
+    try:
+        certificate = enroll_certificate(
+            username,
+            ecdh_public_key,
+            ecdsa_public_key,
+            ecdsa_private_key,
+            request_certificate,
+            trusted_ca_public_key,
+)
+    except CertificateEnrollmentError:
+        return False
+
+# Protect the ECDSA private key using AES-GCM
+    
+    protected_ecdsa_private_key = protect_private_key(password=password,private_key=ecdsa_private_key,key_type="ECDSA")
+    # Create the complete credential record
+    
+    credential_record = {  
+        "username": username,
+        # Stored Argon2id password verifier
+        "password_protection": password_record,
+        # Public keys do not need to be secret
+        "public_keys": {
+            "ecdh": ecdh_public_key,
+            "ecdsa": ecdsa_public_key },
+        # Only encrypted private keys are stored
+        "protected_private_keys": {
+            "ecdh": protected_ecdh_private_key,
+            "ecdsa": protected_ecdsa_private_key
+        },
+
+        # Added later by the Certificate Authority
+        "certificate":  certificate
+    }
+
+    # Store the credential record
+    response = send_request(
+    {
+        "type": "REGISTER",
+        "username": credential_record ["username"],
+        "credential_record": credential_record
+    })
+
+
+    return response["status"]  
