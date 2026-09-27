@@ -105,4 +105,4 @@ Additionally, the server keeps users, documents, and shares purely in memory (so
 
 ---
 
-What would you like to explore next about SecureVault's design or implementation?
+
