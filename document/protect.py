@@ -7,7 +7,7 @@ from .format import (MAX_CIPHERTEXT_SIZE,build_aad,serialize_document,)
 from .metadata import (PUBLIC_FIELDS,encode_private,encode_public,)
 
 
-PRIVATE_FIELDS = {"filename", "file_type"}
+PRIVATE_FIELDS = {"file_type"}
 ALL_METADATA_FIELDS = PUBLIC_FIELDS | PRIVATE_FIELDS
 
 
@@ -16,7 +16,7 @@ def protect_document(plaintext: bytes,metadata: dict,) -> tuple[bytes, bytes]:
     Protect a new document.
 
     Public metadata is authenticated as AES-GCM AAD.
-    The filename, file type and document contents are encrypted.
+    The filename is public but authenticated; file type and contents are encrypted.
 
     Returns:
         protected_document:
@@ -46,15 +46,15 @@ def protect_document(plaintext: bytes,metadata: dict,) -> tuple[bytes, bytes]:
         "document_id": metadata["document_id"],
         "owner_id": metadata["owner_id"],
         "version": metadata["version"],
+        "filename": metadata["filename"],
         "file_size": metadata["file_size"],
         "timestamp": metadata["timestamp"],
     }
 
     metadata_bytes = encode_public(public_metadata)
 
-    # Filename and file type become part of the encrypted plaintext.
+    # The filename is in authenticated public metadata.
     private_payload = encode_private(
-        metadata["filename"],
         metadata["file_type"],
         plaintext,
     )
