@@ -1,35 +1,61 @@
+Here is a revised, more human, and approachable version of the text, keeping all the essential security and architectural details intact while making the tone conversational, engaging, and easy to read.
+
+---
+
 ## Password Protection, Document Handling, and Sharing
 
-### Threat Model and Scope
+### The Threat Model and What We're Up Against
 
-SecureVault is designed around an untrusted document server. We assume that an attacker may read, replace, delete, or replay objects stored by the server, including encrypted documents, credential records, certificates, and share records. The attacker may also observe information that the application deliberately leaves visible, such as document identifiers, owners, sizes, versions, and activity times. Our goal is to keep document contents and private keys confidential and to detect unauthorized changes when a client retrieves a document or accepts a share. We do not assume that encryption can force the server to keep files available. Protection of a compromised user device and recovery after a forgotten password are outside the current design.
+Welcome to **SecureVault**. We're building this system around the reality of an untrusted document server. That means we have to assume an attacker might try to read, replace, delete, or replay anything the server holds—whether that is encrypted documents, credentials, certificates, or share records.
 
-### Password Protection and Registration
+At the same time, we know the server can see certain things by design, like document IDs, owners, file sizes, versions, and when activity happened. Our main goal is simple: keep your document contents and private keys totally confidential, and catch any unauthorized tampering the moment a client tries to download a file or accept a share. Of course, encryption can't force a server to keep files online if it decides to go offline, and recovering a forgotten password or protecting a physically compromised device are outside what this design can fix.
 
-During registration, the client generates a fresh 16-byte salt and applies Argon2id to the UTF-8 password. Our selected parameters are 128 MiB of memory, three iterations, and one processing lane; the output is a 32-byte password verifier. The salt, verifier, and parameters are stored in the credential record. The plaintext password is not stored. The salt is public: its purpose is to make equal passwords produce different verifiers and to prevent reuse of precomputed password-guessing tables. We selected these work factors after measuring approximately 255 ms per operation in our earlier benchmark; this figure describes our measured machine and is not a guaranteed cost for an attacker with different hardware.
+---
 
-At login, the client obtains the stored record, recomputes Argon2id with its stored salt and parameters, and compares the resulting bytes using `secrets.compare_digest`. Argon2id was chosen over a fast hash such as SHA-256 because password guesses should be expensive, particularly after a credential database is exposed. Its memory requirement also increases the resources needed for parallel guessing. It cannot make a weak password unguessable. The password is additionally used with separate fresh salts to derive AES-128 keys that encrypt the user's ECDH and ECDSA private keys. The stored password verifier is not used directly as either encryption key.
+### Passwords, Registration, and Keys
 
-Registration generates two P-256 key pairs. ECDH is used to establish a key for sharing a document key; ECDSA is used for signatures. Both private keys are stored only in encrypted, authenticated form. The client creates a signed certificate enrollment request, and a separate CA administrator must approve it. Before storing the credential record, the client verifies the returned CA signature, the expected username, and that both certified public keys match the keys generated for this registration. The CA private signing key must remain outside the untrusted document server. On first contact with another user, the client checks that user's certificate using its trusted copy of the CA public key before relying on the user's ECDH or ECDSA public key.
+When you register, your client doesn't just save your password—that would be a security nightmare. Instead, it generates a fresh **16-byte salt** and runs your UTF-8 password through **Argon2id**.
 
-We considered direct fingerprint comparison and trust on first use. Direct comparison requires every pair of users to check keys through another trusted channel, while trust on first use does not detect substitution during the first interaction. We chose a small CA so that this check is concentrated at enrollment. Its assurance still depends on the administrator actually checking the applicant's identity and distributing the authentic CA public key.
+* We chose strong work factors: **128 MiB of memory, 3 iterations, and 1 processing lane**, yielding a **32-byte password verifier**.
+* On our benchmark machine, this took about **255 ms** per operation. (Keep in mind, that's just our hardware; an attacker with specialized rigs might have different speeds).
+
+Why Argon2id? Unlike fast hashes like SHA-256, we *want* password guesses to be painfully expensive, especially if a credential database ever leaks. The heavy memory requirement also makes parallel guessing attacks much harder. (Though, fair warning: a strong algorithm won't magically save a weak password from being guessed). We also use separate fresh salts with your password to derive AES-128 keys that securely lock away your ECDH and ECDSA private keys.
+
+**The Certificate Authority (CA) Setup:**
+Registration also creates two P-256 key pairs—one for ECDH (key sharing) and one for ECDSA (signatures). These private keys are stored only in encrypted, authenticated form.
+
+1. Your client submits a signed certificate enrollment request.
+2. A separate CA administrator has to manually approve it.
+3. Before saving your credentials, your client verifies the CA's signature, your username, and makes sure the certified public keys match what you generated.
+
+We deliberately chose a small, centralized CA rather than Trust On First Use (TOFU). While it means the CA admin actually has to verify who you are, it saves everyone from the headache of manually cross-checking fingerprints over separate trusted channels.
+
+---
 
 ### Uploading and Protecting a Document
 
-The upload function reads the file on the client and prepares metadata containing a document ID, owner, version, filename, file type, size, and timestamp. A new document receives a new ID; an update keeps the ID and increases its version. The client calls `protect_document` before sending anything to the server. That function generates a fresh random **16-byte document key** for every encryption and uses AES-128-GCM with a fresh **12-byte nonce**. This includes replacement uploads: a new version receives a new document key rather than encrypting again under the old one.
+When you upload a file, your client reads it and gathers metadata: a document ID, owner, version, filename, file type, size, and timestamp. Brand-new documents get a brand-new ID; updates keep the same ID but bump up the version number.
 
-In the protected object, the document ID, owner, version, size, and timestamp are clear but authenticated as GCM additional authenticated data (AAD). The filename, file type, and document bytes are inside the encrypted and authenticated payload. The integrated server also stores a separate clear filename for displaying document lists. **Therefore, the application does not hide the filename from the server**, even though the filename inside the protected object is encrypted. On download, the client compares the displayed filename with the authenticated one.
+Before anything touches the network, `protect_document` kicks in:
 
-We chose GCM because it provides encryption and authentication in one mode and supports authenticated metadata through AAD. We considered AES-CTR combined with HMAC-SHA-256. Such a design would require separate encryption and MAC keys and an Encrypt-then-MAC order: authenticate the ciphertext, nonce, and relevant metadata before decrypting. Our actual document path uses GCM, so it does not use a separate document HMAC tag. The AES-GCM operation is supplied by PyCryptodome; our application implements the document formatting, metadata handling, key flow, and verification checks around it.
+* It generates a fresh, random **16-byte document key** for every single encryption (even for replacement uploads—we never reuse an old document key).
+* It encrypts the payload using **AES-128-GCM** with a fresh **12-byte nonce**.
 
-A fresh key for each upload means the application does not reset and reuse a nonce counter under an existing document key after a restart. The nonce is still generated randomly, so the guarantee is probabilistic rather than mathematical. Reusing a key and nonce together in GCM would be a serious failure. The implementation also limits the protected payload to approximately 2 GiB.
+**What the Server Can (and Can't) See:**
+In the protected object, things like the document ID, owner, version, size, and timestamp are left clear, but they are fully authenticated as GCM **Additional Authenticated Data (AAD)**. The filename, file type, and actual document bytes are safely encrypted inside.
+
+* Fun fact: The integrated server also stores a separate, clear filename just so it can display nice document lists to you. Because of this, **the application doesn't hide the filename from the server**, even though the copy inside the protected package is encrypted. When you download it, your client simply double-checks that the displayed filename matches the authenticated one.
+
+We chose GCM because it handles both encryption and authentication in one go while supporting AAD. Plus, generating a fresh key for every upload means we don't have to worry about resetting and reusing a nonce counter under an existing key after a restart. The nonce is generated randomly, and our implementation caps protected payloads at around **2 GiB** to stay safe.
+
+---
 
 ### Stored Document Format and Verified Download
 
-Our protected document has the following byte-level structure:
+Whenever a file is saved, it follows a strict byte-level layout:
 
 | Field | Length | Meaning |
-|---|---:|---|
+| --- | --- | --- |
 | Magic value `SGCM` | 4 bytes | Identifies the format |
 | Metadata length | 4 bytes, big-endian | Length of the following public metadata |
 | Public metadata | Variable | Clear metadata authenticated as AAD |
@@ -38,18 +64,45 @@ Our protected document has the following byte-level structure:
 | Ciphertext | Length given above | Encrypted private metadata and document |
 | GCM tag | 16 bytes | Authentication tag |
 
-The GCM AAD consists of the magic value, metadata length, encoded public metadata, and ciphertext length. The client parses the object, verifies its GCM tag, and only then uses the recovered plaintext and private metadata. The download function also checks that the authenticated document ID matches the requested ID, that the owner matches when an owner is expected, that the version is not below the client's recorded minimum, and that the server's clear filename matches the authenticated filename. After these checks, the client writes to a temporary file and moves it to the chosen output path. A failed check returns an error without saving the unverified document.
+When downloading, the client reads this structure, verifies the GCM tag *first*, and only touches the plaintext if the tag checks out. It also performs a series of safety checks:
 
-### Sharing a Document
+* Does the authenticated document ID match what was requested?
+* Does the owner match expectations?
+* Is the version at least as new as the client's recorded minimum?
+* Does the server's clear filename match the authenticated filename?
 
-Sharing grants a recipient access to the **document key**, rather than sending the plaintext document. The sender first verifies the recipient's CA-signed certificate and expected username. The sharing component creates a fresh ephemeral P-256 ECDH key pair, combines its private key with the recipient's certified ECDH public key, and applies HKDF-SHA-256 with a fresh salt to derive a wrapping key. AES-128-GCM then encrypts and authenticates the 16-byte document key for that recipient. The recipient later uses their ECDH private key to derive the same wrapping key and recover the document key.
+If any of these checks fail, the download stops immediately, throwing an error without saving a single byte of unverified data. If it passes, it safely writes to a temporary file before moving it to your final destination.
 
-Wrapping alone does not prove who shared the file: anybody who knows the recipient's public key could encrypt something to it. Therefore, the sender signs a canonical share record with their **ECDSA private key**. The signed record contains the document ID, sender and recipient usernames, version, timestamp, and all fields of the wrapped key. On receipt, the client checks the sender's certificate and signature, confirms that it is the intended recipient, unwraps the document key, and uses the verified download path to authenticate and decrypt the document. A stored version value is used to reject a share whose version is no newer than one previously accepted for that document.
+---
 
-The ECDSA signature authenticates the **share record**, while GCM authenticates the encrypted document to someone who possesses its document key. These are different properties. The current signed share record does not contain a digest of the exact encrypted document; therefore, we should not claim that its ECDSA signature alone provides third-party proof of the exact document contents. Binding a document digest into the signed record would be required for that stronger claim.
+### Sharing a Document with Friends (or Colleagues)
 
-### Security Properties and Limitations
+When you share a document, you aren't emailing the plaintext file—you are granting the recipient access to the **document key**.
 
-Argon2id slows offline password guessing, and AES-GCM protects stored private keys and document contents. A fresh document key and nonce protect each encryption from unintended key–nonce reuse. GCM authentication and the download checks detect alteration of the protected document or its authenticated metadata. CA certificates protect the mapping from a username to public keys, while ECDSA authenticates the sender of a share. Version checks address replay only to the extent that the client retains a trustworthy record of previously accepted versions.
+Here is how the magic happens:
 
-The current application still has material limitations. The socket client and server use `pickle.loads` on network responses and requests. A malicious serialized object may execute code **before** certificate or document verification; this must be replaced with a constrained serialization format and strict field and message-size validation before using the system with an untrusted peer. The server currently keeps users, documents, and shares in memory, so restarting it loses these records. The uploader also keeps document keys in client memory for the current run; restarting the client can leave an uploaded document inaccessible to its owner. Server deletion or refusal to serve a file cannot be prevented cryptographically. These are limitations of the current integrated implementation, not properties that GCM or signatures solve.
+1. The sender verifies the recipient's CA-signed certificate and username.
+2. The sender creates a fresh ephemeral P-256 ECDH key pair, combines its private key with the recipient's certified ECDH public key, and runs **HKDF-SHA-256** with a fresh salt to build a wrapping key.
+3. **AES-128-GCM** encrypts and authenticates the 16-byte document key specifically for that recipient.
+
+**Proving Who Sent It:**
+Encryption alone doesn't prove *who* shared the file, since anyone with the recipient's public key could technically encrypt something to them. To fix this, the sender signs a canonical **share record** using their **ECDSA private key**. This signed record includes the document ID, sender and recipient usernames, version, timestamp, and all the wrapped key details.
+
+When the recipient opens it, their client checks the sender's certificate and signature, unwraps the document key, and runs it through the verified download path. We also check version values to make sure nobody can replay an old, stale share.
+
+> **A Quick Security Note:** The ECDSA signature authenticates the *share record*, while GCM authenticates the *encrypted document*. They do different jobs! Because the current signed share record doesn't embed a cryptographic digest of the exact encrypted document contents, we can't claim its signature alone acts as an ironclad third-party proof of the file's exact contents. Binding a document digest directly into the signed record would be the next step for that kind of ironclad proof.
+
+---
+
+### Where We Stand: Security & Limitations
+
+Let's be completely transparent about what SecureVault does well and where its current edges are:
+
+* **The Good:** Argon2id keeps offline password cracking slow and painful. AES-GCM protects your private keys and documents at rest. Fresh nonces and keys prevent nasty reuse bugs. CA certificates and ECDSA signatures keep identities and shares honest.
+* **The Caveats:** The current implementation has some material limitations we want you to know about. For starters, the socket client and server currently use `pickle.loads` on network messages. **An attacker could theoretically send a malicious serialized object that executes code *before* certificate or document verification happens.** We definitely need to swap this out for a safer serialization format and strict message-size limits before letting it loose on untrusted networks.
+
+Additionally, the server keeps users, documents, and shares purely in memory (so restarting it wipes those records clean), and client-side memory holds document keys during active runs. Finally, server-side deletions or refusals to serve files are fundamentally outside what cryptography can solve. These are practical quirks of our current prototype implementation—not flaws in GCM or signatures themselves!
+
+---
+
+What would you like to explore next about SecureVault's design or implementation?
