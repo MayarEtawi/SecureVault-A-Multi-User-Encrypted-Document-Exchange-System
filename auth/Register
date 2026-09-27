@@ -39,14 +39,9 @@ def register_user( username: str, password: str, request_certificate, trusted_ca
     #  Protect the ECDH private key using AES-GCM
     protected_ecdh_private_key = protect_private_key( password=password,private_key=ecdh_private_key,key_type="ECDH")
     try:
-        certificate = enroll_certificate(
-            username,
-            ecdh_public_key,
-            ecdsa_public_key,
-            ecdsa_private_key,
-            request_certificate,
-            trusted_ca_public_key,
-)
+    
+        certificate = enroll_certificate(username,ecdh_public_key,ecdsa_public_key,ecdsa_private_key,request_certificate,
+    trusted_ca_public_key)
     except CertificateEnrollmentError:
         return False
 
