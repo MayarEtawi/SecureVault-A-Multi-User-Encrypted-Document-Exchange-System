@@ -9,10 +9,7 @@ sys.path.append(
 import socket
 import pickle
 
-from storage import get_document_record, save_user, get_user, get_all_users,save_document,get_document,list_user_documents,save_share,get_share,get_all_shares
-
-
-
+from server.storage import get_document_record, save_user, get_user, get_all_users, save_document, get_document, list_user_documents, save_share, get_share, get_all_shares
 HOST = "127.0.0.1"
 PORT = 5001
 
