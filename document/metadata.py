@@ -10,6 +10,7 @@ PUBLIC_FIELDS = {
     "document_id",
     "owner_id",
     "version",
+    "filename",
     "file_size",
     "timestamp",
 }
@@ -129,6 +130,7 @@ def encode_public(metadata: dict) -> bytes:
         [document ID]
         [owner ID]
         [4-byte version]
+        [filename]
         [8-byte file size]
         [timestamp]
     """
@@ -157,12 +159,14 @@ def encode_public(metadata: dict) -> bytes:
     # >I means an unsigned 4-byte integer.
     version_bytes = struct.pack(">I",metadata["version"],)
 
+    filename_bytes = pack_string(metadata["filename"], "filename")
+
     # >Q means an unsigned 8-byte integer.
     file_size_bytes = struct.pack(">Q",metadata["file_size"],)
 
     timestamp_bytes = pack_string(metadata["timestamp"],"timestamp",)
 
-    return (document_id_bytes+ owner_id_bytes+ version_bytes+ file_size_bytes+ timestamp_bytes)
+    return (document_id_bytes+ owner_id_bytes+ version_bytes+ filename_bytes+ file_size_bytes+ timestamp_bytes)
 
 
 def decode_public(data: bytes) -> dict:
@@ -189,6 +193,12 @@ def decode_public(data: bytes) -> dict:
 
     position += 4
 
+    filename, position = read_string(data, position)
+
+    # The eight-byte file size must still fit after the filename.
+    if position + 8 > len(data):
+        raise ValueError("Public metadata is incomplete")
+
     file_size = struct.unpack_from(">Q",data,position,)[0]
 
     position += 8
@@ -203,6 +213,7 @@ def decode_public(data: bytes) -> dict:
         "document_id": document_id,
         "owner_id": owner_id,
         "version": version,
+        "filename": filename,
         "file_size": file_size,
         "timestamp": timestamp,
     }
@@ -221,13 +232,12 @@ def decode_public(data: bytes) -> dict:
 # Private metadata and document contents
 # ============================================================
 
-def encode_private(filename: str,file_type: str,content: bytes,) -> bytes:
+def encode_private(file_type: str,content: bytes,) -> bytes:
     """
     Build the private payload encrypted by AES-GCM.
 
     Format:
 
-        [filename]
         [file type]
         [document contents]
 
@@ -238,14 +248,12 @@ def encode_private(filename: str,file_type: str,content: bytes,) -> bytes:
     if not isinstance(content, bytes):
         raise TypeError("Document content must be bytes")
 
-    filename_bytes = pack_string(filename,"filename",)
-
     file_type_bytes = pack_string(file_type,"file_type",)
 
-    return (filename_bytes+ file_type_bytes+ content)
+    return file_type_bytes + content
 
 
-def decode_private(payload: bytes,) -> tuple[str, str, bytes]:
+def decode_private(payload: bytes,) -> tuple[str, bytes]:
     """
     Decode the private payload after AES-GCM verification.
 
@@ -259,18 +267,13 @@ def decode_private(payload: bytes,) -> tuple[str, str, bytes]:
 
     position = 0
 
-    filename, position = read_string(payload,position,)
-
     file_type, position = read_string(payload,position,)
 
     # Defensive validation of decrypted private metadata.
-    if filename.strip() == "":
-        raise ValueError("Filename must not be empty")
-
     if file_type.strip() == "":
         raise ValueError("File type must not be empty")
 
     # Everything remaining belongs to the document.
     content = payload[position:]
 
-    return filename, file_type, content
+    return file_type, content
