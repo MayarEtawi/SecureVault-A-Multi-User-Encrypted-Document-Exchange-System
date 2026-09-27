@@ -1,47 +1,64 @@
 """Encrypt and authenticate a document using AES-128-GCM."""
 
-from crypto.gcm import (encrypt_gcm,generate_document_key,)
+"""
+Module summary:
+- protect_document(): Takes plain file content and metadata dict, builds clear AAD header,
+  encrypts private data with AES-GCM, generates new key, and packs everything to binary format.
+"""
 
-from .format import (MAX_CIPHERTEXT_SIZE,build_aad,serialize_document,)
+from crypto.gcm import (
+    encrypt_gcm,
+    generate_document_key,
+)
 
-from .metadata import (PUBLIC_FIELDS,encode_private,encode_public,)
+from .format import (
+    MAX_CIPHERTEXT_SIZE,
+    build_aad,
+    serialize_document,
+)
 
+from .metadata import (
+    PUBLIC_FIELDS,
+    encode_private,
+    encode_public,
+)
 
+# Private fields that must be hidden inside encrypted payload
 PRIVATE_FIELDS = {"file_type"}
+
+# Combine public and private set to check all required keys
 ALL_METADATA_FIELDS = PUBLIC_FIELDS | PRIVATE_FIELDS
 
 
-def protect_document(plaintext: bytes,metadata: dict,) -> tuple[bytes, bytes]:
+def protect_document(plaintext: bytes, metadata: dict) -> tuple[bytes, bytes]:
     """
-    Protect a new document.
+    Protect a new document for safe storage.
 
-    Public metadata is authenticated as AES-GCM AAD.
-    The filename is public but authenticated; file type and contents are encrypted.
+    Public metadata stays readable as AAD header but cannot be modified.
+    File type and file contents are encrypted into ciphertext.
 
     Returns:
-        protected_document:
-            Safe to store on the untrusted server.
-
-        document_key:
-            Must remain on the trusted client and later be
-            wrapped for every authorized recipient.
+        serialized_document: Packed binary payload for sending to server.
+        document_key: Secret key that stays on client side.
     """
 
+    # Make sure plaintext input is bytes type
     if not isinstance(plaintext, bytes):
         raise TypeError("Plaintext must be bytes")
 
+    # Make sure metadata is dictionary
     if not isinstance(metadata, dict):
         raise TypeError("Metadata must be a dictionary")
 
+    # Check dict keys equal all required public and private fields
     if set(metadata) != ALL_METADATA_FIELDS:
         raise ValueError("Missing or unexpected metadata fields")
 
+    # Make sure file size metadata matches actual plaintext length
     if metadata["file_size"] != len(plaintext):
-        raise ValueError(
-            "file_size does not match the plaintext"
-        )
+        raise ValueError("file_size does not match the plaintext")
 
-    # Only these fields remain visible to the server.
+    # Extract public fields to build clear text header
     public_metadata = {
         "document_id": metadata["document_id"],
         "owner_id": metadata["owner_id"],
@@ -51,25 +68,26 @@ def protect_document(plaintext: bytes,metadata: dict,) -> tuple[bytes, bytes]:
         "timestamp": metadata["timestamp"],
     }
 
+    # Pack public header dictionary into byte format
     metadata_bytes = encode_public(public_metadata)
 
-    # The filename is in authenticated public metadata.
-    private_payload = encode_private(
-        metadata["file_type"],
-        plaintext,
-    )
+    # Pack secret file_type string together with plaintext content
+    private_payload = encode_private(metadata["file_type"], plaintext)
 
+    # Check payload size is not bigger than max allowed limit
     if len(private_payload) > MAX_CIPHERTEXT_SIZE:
         raise ValueError("Encrypted payload is too large")
 
-    # Generate a fresh random AES-128 document key.
+    # Generate new random key for this document encryption
     document_key = generate_document_key()
 
-    # GCM ciphertext has the same length as private_payload.
-    aad = build_aad(metadata_bytes,len(private_payload),)
+    # Build AAD byte array using metadata bytes and payload size
+    aad = build_aad(metadata_bytes, len(private_payload))
 
-    protected = encrypt_gcm(private_payload,aad,document_key,)
+    # Encrypt private payload with AES-GCM mode using key and AAD
+    protected = encrypt_gcm(private_payload, aad, document_key)
 
+    # Put all output fields together into final binary stream
     serialized_document = serialize_document(
         metadata_bytes,
         protected.nonce,
