@@ -14,7 +14,7 @@ from storage import get_document_record, save_user, get_user, get_all_users,save
 
 
 HOST = "127.0.0.1"
-PORT = 5000
+PORT = 5001
 
 
 
@@ -108,14 +108,15 @@ def handle_request(request):
     # GET DOCUMENT
     # =========================
     elif request_type == "DOWNLOAD_DOCUMENT":
-        document = get_document(request["document_id"])
+        record = get_document_record(request["document_id"])
 
-        if document is None:
+        if record is None:
             return {"status": False}
 
         return {
             "status": True,
-            "document": document
+            "document": record["protected_document"],
+            "filename": record["filename"],
         }
 
     # =========================
