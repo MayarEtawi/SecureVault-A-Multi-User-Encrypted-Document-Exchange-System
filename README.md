@@ -168,12 +168,7 @@ The course requires at least 70% of the cryptographic algorithms to be written b
 ## 🐞 Known Issues
 
 Found while preparing this README — worth fixing, or at minimum being ready to explain, before the presentation:
-
-1. **One test file cannot be collected:** `tests/test_document_gcm.py` imports from a module named `documents`, but the package is actually named `document` (singular). Running `pytest` reports a collection error for this file until the import is corrected.
-2. **Three tests in `tests/test_ca_integration.py` fail against the current code:** They call `create_share(..., expected_recipient_username=...)`, but the current `create_share` signature in `crypto/sharing.py` no longer accepts that keyword argument. This looks like the test file is out of sync with a signature change in `sharing.py` rather than a real security gap — but it should be reconciled (either update the tests or restore the parameter) before claiming the sharing module is fully verified. With these three excluded, the rest of the suite passes: 212 passed, 1 skipped.
-3. **Unused from-scratch AES:** The from-scratch AES-128 block cipher (`crypto/aes128.py`) is not used anywhere. The actual document encryption path (`crypto/gcm.py`) uses PyCryptodome's AES-GCM. If the from-scratch percentage is tight, this module either needs to be wired into the real GCM path or dropped from the from-scratch count so the report's numbers stay honest.
-4. **Serialization security:** The socket protocol serializes requests and responses with `pickle`. `pickle.loads` on attacker-controlled bytes is a known code-execution risk in general. The current threat model assumes a passive-to-active network attacker but trustworthy endpoints, so this is a real but bounded gap — it's already noted by the team in `Caandsharing_README.md` as needing "a safe encoding ... before deployment." Worth a line in the report's Limitations section either way.
-5. **In-memory server storage:** Server storage is in-memory only (`server/storage.py` uses plain Python dicts). Restarting the server loses every account, document, and share record. Fine for a demo, but should be stated explicitly as a limitation rather than discovered live.
+1. **In-memory server storage:** Server storage is in-memory only (`server/storage.py` uses plain Python dicts). Restarting the server loses every account, document, and share record. Fine for a demo, but should be stated explicitly as a limitation rather than discovered live.
 
 ---
 
