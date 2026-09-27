@@ -9,7 +9,8 @@ from crypto.ecdsa import is_valid_public_key
 from crypto.ecc import Point, n
 from pki.ca import generate_ca_keypair, issue_certificate
 from pki.certificate import UserCertificate
-
+from crypto.ecdsa import verify as verify_ecdsa_signature
+from pki.enrollment_request import request_bytes
 
 def initialize_ca(private_key_path: str, public_key_path: str) -> Point:
     """
@@ -131,28 +132,66 @@ def issue_from_request(
     certificate_path: str,
     private_key_path: str,
 ) -> None:
-    """Review a request locally, then issue a CA-signed certificate."""
+    """Verify a signed request before asking the CA administrator to approve."""
     request_file = Path(request_path)
 
     if request_file.stat().st_size > 4096:
         raise ValueError("certificate request is too large")
 
-    request = json.loads(request_file.read_text(encoding="utf-8"))
+    try:
+        request = json.loads(request_file.read_text(encoding="utf-8"))
 
-    username = request["username"]
-    ecdh_encoded = bytes.fromhex(request["ecdh_public_key"])
-    ecdsa_encoded = bytes.fromhex(request["ecdsa_public_key"])
+        if not isinstance(request, dict):
+            raise ValueError("request must be an object")
 
-    ecdh_public_key = _read_public_key(request["ecdh_public_key"])
-    ecdsa_public_key = _read_public_key(request["ecdsa_public_key"])
+        username = request["username"]
+        ecdh_public_key = _read_public_key(request["ecdh_public_key"])
+        ecdsa_public_key = _read_public_key(request["ecdsa_public_key"])
 
+        request_id = bytes.fromhex(request["request_id"])
+        signature = request["request_signature"]
+
+        if not isinstance(signature, list) or len(signature) != 2:
+            raise ValueError("invalid signature format")
+
+        signed_body = request_bytes(
+            username,
+            ecdh_public_key,
+            ecdsa_public_key,
+            request_id,
+        )
+
+        if not verify_ecdsa_signature(
+            signed_body,
+            tuple(signature),
+            ecdsa_public_key,
+        ):
+            raise ValueError("invalid request signature")
+
+        ecdh_encoded = bytes.fromhex(request["ecdh_public_key"])
+        ecdsa_encoded = bytes.fromhex(request["ecdsa_public_key"])
+
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        raise ValueError("invalid enrollment request") from exc
+
+    # This prompt is reached only after the signature has passed.
     print("Requested username:", username)
     print("ECDH fingerprint:", hashlib.sha256(ecdh_encoded).hexdigest())
     print("ECDSA fingerprint:", hashlib.sha256(ecdsa_encoded).hexdigest())
     print("Check the applicant's right to this username and these keys.")
 
-    approval = input("Type APPROVE only after checking: ")
+    checked_username = input("Username verified independently: ").strip()
+    checked_ecdh = input("ECDH fingerprint read from applicant: ").strip().lower()
+    checked_ecdsa = input("ECDSA fingerprint read from applicant: ").strip().lower()
 
+    if (
+        checked_username != username
+        or checked_ecdh != hashlib.sha256(ecdh_encoded).hexdigest()
+        or checked_ecdsa != hashlib.sha256(ecdsa_encoded).hexdigest()
+    ):
+        raise PermissionError("independent identity/key check failed")
+
+    approval = input("Type APPROVE after the checks: ")
     if approval != "APPROVE":
         raise PermissionError("certificate request was not approved")
 
